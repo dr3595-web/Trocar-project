@@ -1,0 +1,252 @@
+let port;
+let reader;
+
+let forceValues = [];
+let maxForce = 100;
+
+let connectButton;
+
+function setup() {
+  createCanvas(windowWidth, 600);
+
+  connectButton = createButton("Connect ESP32");
+  connectButton.position(20, 20);
+  connectButton.mousePressed(connectSerial);
+}
+
+function draw() {
+  background(20);
+
+
+  // CURRENT FORCE
+  
+
+  let currentForce = 0;
+
+  if (forceValues.length > 0) {
+    currentForce = forceValues[forceValues.length - 1];
+  }
+
+  fill(255);
+  noStroke();
+
+  textSize(24);
+  text("Live Force", 20, 85);
+
+  textSize(18);
+  text("Force: " + currentForce.toFixed(2), 20, 115);
+
+
+  // GRAPH
+
+
+  let graphX = 70;
+  let graphY = 150;
+  let graphW = width - 100;
+  let graphH = height - 200;
+
+
+  // scale increase
+  if (currentForce > maxForce) {
+    maxForce = currentForce * 1.2;
+  }
+
+
+
+  // AXES
+  
+
+  stroke(120);
+  strokeWeight(1);
+
+  line(
+    graphX,
+    graphY,
+    graphX,
+    graphY + graphH
+  );
+
+  line(
+    graphX,
+    graphY + graphH,
+    graphX + graphW,
+    graphY + graphH
+  );
+
+
+
+  // GRID + Y LABELS
+
+
+  textSize(12);
+  fill(180);
+  noStroke();
+
+  for (let i = 0; i <= 5; i++) {
+
+    let value = maxForce * (1 - i / 5);
+
+    let y = graphY + graphH * (i / 5);
+
+    fill(180);
+    text(value.toFixed(0), 20, y + 4);
+
+    stroke(50);
+
+    line(
+      graphX,
+      y,
+      graphX + graphW,
+      y
+    );
+
+    noStroke();
+  }
+
+
+ 
+  // FORCE LINE
+ 
+
+  if (forceValues.length > 1) {
+
+    noFill();
+    stroke(0, 200, 255);
+    strokeWeight(2);
+
+    beginShape();
+
+    for (let i = 0; i < forceValues.length; i++) {
+
+      let x = map(
+        i,
+        0,
+        forceValues.length - 1,
+        graphX,
+        graphX + graphW
+      );
+
+      let y = map(
+        forceValues[i],
+        0,
+        maxForce,
+        graphY + graphH,
+        graphY
+      );
+
+      vertex(x, y);
+    }
+
+    endShape();
+  }
+}
+
+
+
+// CONNECT ESP32
+
+async function connectSerial() {
+
+  try {
+
+    port = await navigator.serial.requestPort();
+
+    await port.open({
+      baudRate: 115200
+    });
+
+    console.log("ESP32 connected!");
+
+    connectButton.html("ESP32 Connected");
+
+    reader = port.readable.getReader();
+
+    // Start reading
+    readSerial();
+
+  } catch (error) {
+
+    console.error("Serial connection error:", error);
+
+  }
+}
+
+
+
+// READ ONE SERIAL CHUNK
+
+
+async function readSerial() {
+
+  try {
+
+    const result = await reader.read();
+
+    if (result.done) {
+
+      reader.releaseLock();
+      return;
+
+    }
+
+    const value = result.value;
+
+    if (value) {
+
+      // Convert bytes to text
+      let textData = new TextDecoder().decode(value);
+
+      // Store incoming text
+      serialBuffer += textData;
+
+      // Process complete lines
+      let lines = serialBuffer.split("\n");
+
+      // Keep incomplete line
+      serialBuffer = lines.pop();
+
+      for (let line of lines) {
+
+        line = line.trim();
+
+        if (line.length === 0) {
+          continue;
+        }
+
+        let force = parseFloat(line);
+
+        if (!isNaN(force)) {
+
+          forceValues.push(force);
+
+          console.log("Force:", force);
+        }
+      }
+    }
+
+    // Read the next chunk
+    readSerial();
+
+  } catch (error) {
+
+    console.error("Serial read error:", error);
+
+  }
+}
+
+
+// Buffer for serial data
+let serialBuffer = "";
+
+
+
+// RESIZE
+
+
+function windowResized() {
+
+  resizeCanvas(
+    windowWidth,
+    600
+  );
+}
